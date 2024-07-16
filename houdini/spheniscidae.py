@@ -52,12 +52,17 @@ class Spheniscidae:
                              f'{self.server.config.port}" /></cross-domain-policy>')
         await self.close()
 
-    async def send_xt(self, handler_id, *data):
-        internal_id = -1
+    async def send_xt(self, handler_id, *data, internal_id=-1):
 
         xt_data = '%'.join(str(d) for d in data)
         line = f'%xt%{handler_id}%{internal_id}%{xt_data}%'
         await self.send_line(line)
+        
+    async def send_packet(self, handler_id, *data):
+        await self.send_xt(handler_id, *data)
+        
+    async def send_partypacket(self, handler_id, *data):
+        await self.send_xt(handler_id, *data)
 
     async def send_xml(self, xml_dict):
         data_root = Element('msg')

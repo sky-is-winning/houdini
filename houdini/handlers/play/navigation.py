@@ -76,7 +76,7 @@ async def handle_join_server(p, penguin_id: int, login_key: str):
     if login_key != p.login_key:
         return await p.close()
 
-    await p.send_xt('activefeatures')
+    #await p.send_xt('activefeatures')
 
     moderator_status = 3 if p.character else 2 if p.stealth_moderator else 1 if p.moderator else 0
 

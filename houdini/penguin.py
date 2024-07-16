@@ -59,6 +59,9 @@ class Penguin(Spheniscidae, penguin.Penguin):
         self.egg_timer_minutes = None
 
         self.can_dig_gold = False
+        
+        self.cookie = None
+        self.current_party = "default"
 
     @property
     def party_state(self):
