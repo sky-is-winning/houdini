@@ -789,6 +789,7 @@ CREATE TABLE ban (
   reason SMALLINT NOT NULL,
   comment TEXT DEFAULT NULL,
   message TEXT DEFAULT NULL,
+  ip_hash CHAR(128) DEFAULT NULL,
   PRIMARY KEY (penguin_id, issued, expires),
   CONSTRAINT ban_ibfk_1 FOREIGN KEY (penguin_id) REFERENCES penguin (id) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT ban_ibfk_2 FOREIGN KEY (moderator_id) REFERENCES penguin (id) ON DELETE CASCADE ON UPDATE CASCADE
@@ -808,6 +809,7 @@ COMMENT ON COLUMN ban.moderator_id IS 'Moderator penguin ID';
 COMMENT ON COLUMN ban.reason IS 'Ban reason';
 COMMENT ON COLUMN ban.comment IS 'Ban comment';
 COMMENT ON COLUMN ban.message IS 'Banned for message';
+COMMENT ON COLUMN ban.ip_hash IS 'Connection IP address to prevent evasion';
 
 DROP TABLE IF EXISTS warning;
 CREATE TABLE warning (

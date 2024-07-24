@@ -12,6 +12,7 @@ class Ban(db.Model):
     reason = db.Column(db.SmallInteger, nullable=False)
     comment = db.Column(db.Text)
     message = db.Column(db.Text)
+    ip_hash = db.Column(db.CHAR(255), nullable=False)
 
 
 class Warning(db.Model):

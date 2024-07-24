@@ -1,9 +1,13 @@
 import datetime
+import hashlib
+
+from sqlalchemy import desc
 
 from houdini import handlers
 from houdini.constants import ClientType
 from houdini.data import db
 from houdini.data.moderator import Ban, Report, Warning
+from houdini.data.penguin import Login
 from houdini.data.penguin import Penguin
 from houdini.handlers import XTPacket
 
@@ -47,14 +51,17 @@ async def handle_moderator_ban(p, penguin_id: int, ban_type: int, reason: int, d
     player = p.server.penguins_by_id[penguin_id] if penguin_id in p.server.penguins_by_id \
         else await Penguin.get(penguin_id)
     if not player.moderator:
+        if duration == 0:
+            await player.update(permaban=True).apply()
+            duration = 87600
+
         date_issued = datetime.datetime.now()
         date_expires = date_issued + datetime.timedelta(hours=duration)
 
-        if duration == 0:
-            await player.update(permaban=True).apply()
+        hashed_ip = await get_hashed_ip(p, penguin_id)
 
         await Ban.create(penguin_id=player.id, issued=date_issued, expires=date_expires,
-                         moderator_id=p.id, reason=reason, comment=notes, message=message)
+                         moderator_id=p.id, reason=reason, ip_hash=hashed_ip, comment=notes, message=message)
 
         if penguin_id in p.server.penguins_by_id:
             if player.is_vanilla_client:
@@ -99,15 +106,18 @@ async def cheat_ban(p, penguin_id, hours=24, comment=''):
 
         number_bans = await db.select([db.func.count(Ban.penguin_id)]).where(
             Ban.penguin_id == player.id).gino.scalar()
+        
+        if number_bans >= 3:
+            await player.update(permaban=True).apply()
+            hours = 87600
 
         date_issued = datetime.datetime.now()
         date_expires = date_issued + datetime.timedelta(hours=hours)
 
-        if number_bans >= 3:
-            await player.update(permaban=True).apply()
+        hashed_ip = await get_hashed_ip(p, penguin_id)
 
         await Ban.create(penguin_id=player.id, issued=date_issued, expires=date_expires,
-                         moderator_id=p.id, reason=1, comment=comment, message='Cheat ban')
+                         moderator_id=p.id, reason=1, ip_hash=hashed_ip, comment=comment, message='Cheat ban')
 
         if penguin_id in p.server.penguins_by_id:
             await player.send_error_and_disconnect(611, comment)
@@ -133,15 +143,18 @@ async def moderator_ban(p, penguin_id, hours=24, comment='', message=''):
 
         number_bans = await db.select([db.func.count(Ban.penguin_id)]).where(
             Ban.penguin_id == player.id).gino.scalar()
+        
+        if number_bans >= 3:
+            await player.update(permaban=True).apply()
+            hours = 87600
 
         date_issued = datetime.datetime.now()
         date_expires = date_issued + datetime.timedelta(hours=hours)
 
-        if number_bans >= 3:
-            await player.update(permaban=True).apply()
+        hashed_ip = await get_hashed_ip(p, penguin_id)
 
         await Ban.create(penguin_id=player.id, issued=date_issued, expires=date_expires,
-                         moderator_id=p.id, reason=2, comment=comment, message=message)
+                         moderator_id=p.id, reason=2, ip_hash=hashed_ip, comment=comment, message=message)
 
         if penguin_id in p.server.penguins_by_id:
             if player.is_vanilla_client:
@@ -149,3 +162,11 @@ async def moderator_ban(p, penguin_id, hours=24, comment='', message=''):
                 await player.close()
             else:
                 await player.send_error_and_disconnect(610, comment)
+
+async def get_hashed_ip(p, penguin_id):
+    if penguin_id in p.server.penguins_by_id:
+        ip = p.server.penguins_by_id[penguin_id].peer_name[0] + p.server.config.auth_key
+        return hashlib.sha3_512(ip.encode()).hexdigest()
+    else:
+        recent_login = await Login.query.where(Login.penguin_id == penguin_id).order_by(desc(Login.date)).gino.first()
+        return recent_login.ip_hash

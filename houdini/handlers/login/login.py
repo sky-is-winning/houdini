@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta
 
 import bcrypt
+import hashlib
 from sqlalchemy import func
 
 from houdini import handlers
@@ -83,8 +84,11 @@ async def handle_login(p, credentials: Credentials):
         minutes_played_today = await get_minutes_played_today(p)
         if minutes_played_today >= data.timer_total.total_seconds() // 60:
             return await p.send_error_and_disconnect(910, data.timer_total)
+        
+    ip = p.peer_name[0] + p.server.config.auth_key
+    hashed_ip = hashlib.sha3_512(ip.encode()).hexdigest()
 
-    active_ban = await Ban.query.where((Ban.penguin_id == data.id) & (Ban.expires >= datetime.now())).gino.first()
+    active_ban = await Ban.query.where((Ban.penguin_id == data.id) | (Ban.ip_hash == hashed_ip) & (Ban.expires >= datetime.now())).gino.first()
 
     if active_ban is not None:
         hours_left = round((active_ban.expires - datetime.now()).total_seconds() / 60 / 60)
