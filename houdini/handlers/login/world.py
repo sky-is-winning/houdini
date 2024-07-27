@@ -36,6 +36,22 @@ async def world_login(p, data):
     p.update(**data.to_dict())
     await p.send_xt('l')
 
+async def get_data(p, login_key, credentials, confirmation_hash):
+    login_hash = Crypto.encrypt_password(login_key + p.server.config.auth_key) + login_key
+
+    if credentials.client_key != login_hash:
+        return await p.close()
+
+    if login_key != credentials.login_key or confirmation_hash.decode() != credentials.confirmation_hash:
+        return await p.close()
+
+    data = await Penguin.get(credentials.id)
+
+    if credentials.username != data.username:
+        return await p.close()
+    
+    return data
+
 
 @handlers.handler(XMLPacket('login'), client=ClientType.Vanilla)
 @handlers.allow_once
@@ -51,15 +67,10 @@ async def handle_login(p, credentials: WorldCredentials):
         return await p.close()
 
     login_key = login_key.decode()
-    login_hash = Crypto.encrypt_password(login_key + p.server.config.auth_key) + login_key
+    data = await get_data(p, login_key, credentials, confirmation_hash)
 
-    if credentials.client_key != login_hash:
-        return await p.close()
-
-    if login_key != credentials.login_key or confirmation_hash.decode() != credentials.confirmation_hash:
-        return await p.close()
-
-    data = await Penguin.get(credentials.id)
+    if not data:
+        return
 
     p.login_key = login_key
 
