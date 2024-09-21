@@ -101,7 +101,7 @@ async def handle_party_task_complete(p, task_index: int):
     coins = COIN_REWARDS.get(task_index)
     if p.cookie['questTaskStatus'][task_index] == 0 and coins is not None:
         await p.update(coins=p.coins+coins).apply()
-        await p.send_xt('totalcoins', p.coins)
+        await p.send_xt('gtc', p.coins)
         
     p.cookie['questTaskStatus'][task_index] = 1
     if all([p.cookie['questTaskStatus'][i] == 1 for i in range(5)]):

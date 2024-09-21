@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from importlib import import_module
 from dataclasses import dataclass
 
-party_modules = ["insideout"]
+party_modules = ["insideout", "waddleon"]
 
 parties_data = {}
 
