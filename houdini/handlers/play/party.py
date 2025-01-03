@@ -1,21 +1,11 @@
 import ujson
-import random
-import asyncio
 
 from houdini import handlers
 from houdini.handlers import XTPacket
-from houdini.constants import ClientType
-from houdini.data.pet import PuffleItem
-from houdini.data.item import Item
-from houdini.data.igloo import Location, Furniture
-from houdini.handlers.play.navigation import handle_join_server, handle_join_room
-from houdini.handlers.play.avatar import handle_player_transformation
-from houdini.handlers.play.player import handle_set_player_frame, handle_send_emote
-from datetime import datetime, timedelta
+from houdini.handlers.play.navigation import handle_join_server
 from importlib import import_module
-from dataclasses import dataclass
 
-party_modules = ["insideout", "waddleon"]
+party_modules = ["insideout", "waddleon", "puffle16", "prehistoric16"]
 
 parties_data = {}
 
@@ -39,6 +29,12 @@ QC_MESSAGE_VIEWED_COMMAND = "qcmsgviewed"
 QUEST_TASK_COMPLETE = "qtaskcomplete"
 
 # END OF CONSTANTS
+
+@handlers.handler(XTPacket('party', 'transform'))
+async def handle_party_transformation(p, transform_id: int):
+    p.avatar = transform_id
+    await p.room.send_xt('spts', p.id, transform_id)
+
 async def send_party_cookie(p):
     PARTY_CACHE_CURRENT = parties_data[p.current_party]['PARTY_CACHE_CURRENT']
     DEFAULT_PARTY_COOKIE = parties_data[p.current_party]['DEFAULT_PARTY_COOKIE']
