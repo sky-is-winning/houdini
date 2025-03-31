@@ -1,7 +1,7 @@
 
 from websockets.exceptions import ConnectionClosed
 from websockets import WebSocketClientProtocol
-from websockets.protocol import State
+from websockets.connection import State
 from .utils import resolve_ip_address
 
 import asyncio
