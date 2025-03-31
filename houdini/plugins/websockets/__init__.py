@@ -34,12 +34,12 @@ class HoudiniWebsockets(IPlugin):
     @property
     def certificate_path(self) -> Optional[str]:
         """The path to the certificate file (optional)"""
-        return "/etc/letsencrypt/live/cphistory.pw/fullchain.pem"
+        return "/etc/letsencrypt/live/server.cphistory.pw/fullchain.pem"
 
     @property
     def key_path(self) -> Optional[str]:
         """The path to the key file (optional)"""
-        return "/etc/letsencrypt/live/cphistory.pw/privkey.pem"
+        return "/etc/letsencrypt/live/server.cphistory.pw/privkey.pem"
 
     @property
     def ssl_context(self) -> Optional[ssl.SSLContext]:
