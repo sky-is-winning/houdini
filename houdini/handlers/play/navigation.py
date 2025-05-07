@@ -194,7 +194,7 @@ async def handle_disconnect_room(p):
 
     minutes_played = (datetime.now() - p.login_timestamp).total_seconds() / 60.0
 
-    ip = p.peer_name[0] + p.server.config.auth_key
+    ip = p.peer_name + p.server.config.auth_key
     hashed_ip = hashlib.sha3_512(ip.encode()).hexdigest()
     await Login.create(penguin_id=p.id,
                        date=p.login_timestamp,

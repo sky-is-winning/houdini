@@ -35,7 +35,7 @@ async def handle_login(p, credentials: Credentials):
     password_correct = await loop.run_in_executor(None, bcrypt.checkpw,
                                                   password.encode('utf-8'), data.password.encode('utf-8'))
 
-    ip_addr = p.peer_name[0]
+    ip_addr = p.peer_name
     flood_key = f'{ip_addr}.flood'
 
     if not password_correct:
@@ -85,7 +85,7 @@ async def handle_login(p, credentials: Credentials):
         if minutes_played_today >= data.timer_total.total_seconds() // 60:
             return await p.send_error_and_disconnect(910, data.timer_total)
         
-    ip = p.peer_name[0] + p.server.config.auth_key
+    ip = p.peer_name + p.server.config.auth_key
     hashed_ip = hashlib.sha3_512(ip.encode()).hexdigest()
 
     active_ban = await Ban.query.where((Ban.penguin_id == data.id) | (Ban.ip_hash == hashed_ip) & (Ban.expires >= datetime.now())).gino.first()

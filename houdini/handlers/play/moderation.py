@@ -165,7 +165,7 @@ async def moderator_ban(p, penguin_id, hours=24, comment='', message=''):
 
 async def get_hashed_ip(p, penguin_id):
     if penguin_id in p.server.penguins_by_id:
-        ip = p.server.penguins_by_id[penguin_id].peer_name[0] + p.server.config.auth_key
+        ip = p.server.penguins_by_id[penguin_id].peer_name + p.server.config.auth_key
         return hashlib.sha3_512(ip.encode()).hexdigest()
     else:
         recent_login = await Login.query.where(Login.penguin_id == penguin_id).order_by(desc(Login.date)).gino.first()
