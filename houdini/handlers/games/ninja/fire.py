@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import math
 import random
+import enum
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import List, Union
@@ -9,9 +10,18 @@ from typing import List, Union
 from houdini import IWaddle, handlers
 from houdini.data.ninja import Card
 from houdini.handlers import XTPacket
-from houdini.handlers.games.ninja.card import ninja_stamps_earned
 from houdini.penguin import Penguin
 
+class FireStamp(enum.IntEnum):
+    """IDs of Card-Jitsu Fire stamps"""
+    WARM_UP = 252
+    SCORE_FIRE = 254
+    FIRE_MIDWAY = 256
+    STRONG_DEFENCE = 260
+    FIRE_SUIT = 262
+    FIRE_NINJA = 264
+    MAX_ENERGY = 266
+    FIRE_EXPERT = 268
 
 @dataclass
 class FireNinja:
@@ -37,9 +47,7 @@ class CardJitsuFireLogic(IWaddle):
     AutoBattleTimeout = 22
 
     ItemAwards = [6025, 4120, 2013, 1086, 3032]
-    StampAwards = {2: 256, 4: 262}
-
-    RankSpeed = 1
+    StampAwards = {1: FireStamp.FIRE_MIDWAY, 3: FireStamp.FIRE_SUIT}
 
     def __init__(self, waddle):
         super().__init__(waddle)
@@ -329,7 +337,7 @@ class CardJitsuFireLogic(IWaddle):
                         player_finish_position = self.podium[n.seat_id]
 
                         await end_game_stamps(n, player_finish_position)
-                        await fire_ninja_progress(n.penguin, self.podium[n.seat_id])
+                        await fire_ninja_progress(n.penguin, self.podium[n.seat_id], len(self.podium))
 
                         finish_positions = ','.join(str(max(position, 1)) for position in self.podium)
                         await n.penguin.send_xt('zm', 'zo', finish_positions)
@@ -397,8 +405,7 @@ class CardJitsuFireLogic(IWaddle):
 
 
 class FireMatLogic(CardJitsuFireLogic):
-
-    RankSpeed = 0.5
+    pass
 
 
 class FireSenseiLogic(CardJitsuFireLogic):
@@ -481,7 +488,7 @@ class FireSenseiLogic(CardJitsuFireLogic):
             player_finish_position = self.podium[ninja.seat_id]
             if player_finish_position > 0:
                 await end_game_stamps(ninja, player_finish_position)
-                await fire_ninja_progress(ninja.penguin, player_finish_position)
+                await fire_ninja_progress(ninja.penguin, player_finish_position, len(self.podium))
 
                 await ninja.penguin.send_xt('zm', 'zo', finish_positions)
                 await self.remove_penguin(ninja.penguin, quit_early=False)
@@ -527,22 +534,41 @@ async def fire_ninja_rank_up(p, ranks=1):
     for rank in range(p.fire_ninja_rank, p.fire_ninja_rank+ranks):
         await p.add_inventory(p.server.items[CardJitsuFireLogic.ItemAwards[rank]], notify=False)
         if rank in CardJitsuFireLogic.StampAwards:
-            await p.add_stamp(p.server.stamps[CardJitsuFireLogic.StampAwards[rank]])
+            await p.add_card_jitsu_stamp(CardJitsuFireLogic.StampAwards[rank])
     await p.update(
-        fire_ninja_rank=p.fire_ninja_rank + ranks,
-        fire_ninja_progress=p.fire_ninja_progress % 100
+        fire_ninja_rank=p.fire_ninja_rank + ranks
     ).apply()
     return True
 
+# exp required to reach this rank
+def get_fire_rank_threshold(rank):
+    try:
+        return [0, 25, 75, 175, 325][rank]
+    except:
+        return
 
-async def fire_ninja_progress(p, finish_position=1):
-    if p.fire_ninja_rank < 4:
-        speed = type(p.waddle).RankSpeed
-        points = math.floor((25 / (p.fire_ninja_rank+1) / finish_position) * speed)
-        await p.update(fire_ninja_progress=p.fire_ninja_progress+points).apply()
-    elif type(p.waddle) == FireSenseiLogic and p.fire_ninja_rank == 4 and finish_position == 1:
-        await p.update(fire_ninja_progress=100).apply()
-    if p.fire_ninja_progress >= 100:
+async def fire_ninja_progress(p, finish_position, players_number):
+    has_suit = p.fire_ninja_rank >= 4
+    is_sensei = type(p.waddle) == FireSenseiLogic
+    beat_sensei = is_sensei and p.fire_ninja_rank == 4 and finish_position == 1
+    
+    cur_rank_threshold = get_fire_rank_threshold(p.fire_ninja_rank)
+    next_rank_threshold = get_fire_rank_threshold(p.fire_ninja_rank + 1)
+    # scenarios you are allowed to earn XP
+    if not has_suit and not is_sensei:
+        previous_progress = p.fire_ninja_progress
+        # for older versions where the progress was the percentage
+        if previous_progress < cur_rank_threshold or previous_progress > next_rank_threshold:
+            previous_progress = int(cur_rank_threshold + previous_progress / 100 * (next_rank_threshold - cur_rank_threshold))
+        points = [
+            [9, 3],
+            [12, 6, 3],
+            [15, 9, 6, 3],
+        ][players_number - 2][finish_position - 1]
+        await p.update(fire_ninja_progress=previous_progress+points).apply()
+    
+    got_new_item = not has_suit and p.fire_ninja_progress >= next_rank_threshold
+    if beat_sensei or got_new_item:
         await fire_ninja_rank_up(p)
         await p.send_xt('zm', 'nr', 0, p.fire_ninja_rank)
 
@@ -551,18 +577,18 @@ async def end_game_stamps(ninja, finish_position):
     if finish_position == 1:
         await ninja.penguin.update(fire_matches_won=ninja.penguin.fire_matches_won + 1).apply()
         if ninja.penguin.fire_matches_won >= 10:
-            await ninja.penguin.add_stamp(ninja.penguin.server.stamps[252])
+            await ninja.penguin.add_card_jitsu_stamp(FireStamp.WARM_UP)
         if ninja.penguin.fire_matches_won >= 50:
-            await ninja.penguin.add_stamp(ninja.penguin.server.stamps[268])
+            await ninja.penguin.add_card_jitsu_stamp(FireStamp.FIRE_EXPERT)
         if ninja.energy >= 6:
-            await ninja.penguin.add_stamp(ninja.penguin.server.stamps[260])
+            await ninja.penguin.add_card_jitsu_stamp(FireStamp.STRONG_DEFENCE)
         if type(ninja.penguin.waddle) == FireSenseiLogic:
-            await ninja.penguin.add_stamp(ninja.penguin.server.stamps[264])
+            await ninja.penguin.add_card_jitsu_stamp(FireStamp.FIRE_NINJA)
 
     if ninja.energy_won >= 1:
-        await ninja.penguin.add_stamp(ninja.penguin.server.stamps[254])
+        await ninja.penguin.add_card_jitsu_stamp(FireStamp.SCORE_FIRE)
     if ninja.energy_won >= 3:
-        await ninja.penguin.add_stamp(ninja.penguin.server.stamps[266])
+        await ninja.penguin.add_card_jitsu_stamp(FireStamp.MAX_ENERGY)
 
 
 @handlers.handler(XTPacket('gz', ext='z'))
@@ -649,5 +675,5 @@ async def handle_info_ready_sync(p):
 
 @handlers.handler(XTPacket('lz', ext='z'))
 @handlers.player_in_room(CardJitsuFireLogic.room_id)
-async def handle_leave_game(p):
-    await ninja_stamps_earned(p)
+async def handle_leave_game(p: Penguin):
+    await p.send_card_jitsu_stamp_info()

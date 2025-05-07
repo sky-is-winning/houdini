@@ -1,6 +1,7 @@
 import itertools
 import math
 import random
+import enum
 from collections import Counter
 from dataclasses import dataclass
 from typing import Dict, List, Union
@@ -9,6 +10,19 @@ from houdini import IWaddle, handlers
 from houdini.data.ninja import Card
 from houdini.handlers import XTPacket
 from houdini.penguin import Penguin
+
+class CardStamp(enum.IntEnum):
+    """ID of Card-Jitsu stamps"""
+    GRASSHOPPER = 230
+    ELEMENTAL_WIN = 242
+    FINE_STUDENT = 232
+    FLAWLESS_VICTORY = 238
+    ONE_ELEMENT = 244
+    TRUE_NINJA = 234
+    MATCH_MASTER = 240
+    NINJA_MASTER = 236
+    SENSEI_CARD = 246
+    FULL_DOJO = 248
 
 
 @dataclass
@@ -44,10 +58,13 @@ class CardJitsuLogic(IWaddle):
 
     ItemAwards = [4025, 4026, 4027, 4028, 4029, 4030, 4031, 4032, 4033, 104]
     PostcardAwards = {0: 177, 4: 178, 8: 179}
-    StampAwards = {0: 230, 4: 232, 8: 234, 9: 236}
+    StampAwards = {
+        0: CardStamp.GRASSHOPPER,
+        4: CardStamp.FINE_STUDENT,
+        8: CardStamp.TRUE_NINJA,
+        9: CardStamp.NINJA_MASTER,
+    }
     StampGroupId = 38
-
-    RankSpeed = 1
 
     def __init__(self, waddle):
         super().__init__(waddle)
@@ -188,7 +205,7 @@ class CardJitsuLogic(IWaddle):
 
 
 class CardJitsuMatLogic(CardJitsuLogic):
-    RankSpeed = 0.5
+    pass
 
 
 class SenseiLogic(CardJitsuLogic):
@@ -237,39 +254,41 @@ async def ninja_rank_up(p, ranks=1):
         if rank in CardJitsuLogic.PostcardAwards:
             await p.add_inbox(p.server.postcards[CardJitsuLogic.PostcardAwards[rank]])
         if rank in CardJitsuLogic.StampAwards:
-            await p.add_stamp(p.server.stamps[CardJitsuLogic.StampAwards[rank]])
-    await p.update(ninja_rank=p.ninja_rank + ranks, ninja_progress=0).apply()
+            await p.add_card_jitsu_stamp(CardJitsuLogic.StampAwards[rank])
+    await p.update(ninja_rank=p.ninja_rank + ranks).apply()
     return True
 
+def get_exp_difference_to_next_rank(cur_rank: int) -> int:
+    return (cur_rank + 1) * 5
+
+def get_threshold_for_rank(rank: int) -> int:
+    # using arithmetic progression sum because the exp structure allows 
+    return (rank + 1) * rank // 2 * 5
 
 async def ninja_progress(p, won=False):
-    if p.ninja_rank == 0:
-        await p.update(ninja_progress=100).apply()
-    elif p.ninja_rank < 9:
-        speed = type(p.waddle).RankSpeed
-        if not won:
-            speed *= 0.5
-        points = math.floor((100 / p.ninja_rank) * speed)
-        await p.update(ninja_progress=p.ninja_progress+points).apply()
-    if p.ninja_progress >= 100:
+    # black belts don't need exp, otherwise it could overflow
+    if p.ninja_rank >= 9:
+        return
+    gained_exp = 5 if won else 1
+
+    previous_progress = p.ninja_progress
+    cur_rank_threshold = get_threshold_for_rank(p.ninja_rank)
+    next_rank_threshold = get_threshold_for_rank(p.ninja_rank + 1)
+    # this is for correcting old versions, where the exp might not be in the proper threshold.
+    if previous_progress < cur_rank_threshold or previous_progress > next_rank_threshold:
+        # in this case, ninja_progress is the percentage to next belt
+        previous_progress = int(cur_rank_threshold + previous_progress * get_exp_difference_to_next_rank(p.ninja_rank) / 100)
+
+    new_progress = previous_progress + gained_exp
+    await p.update(ninja_progress=new_progress).apply()
+    if new_progress >= next_rank_threshold:
         await ninja_rank_up(p)
         await p.send_xt('cza', p.ninja_rank)
-
-
-async def ninja_stamps_earned(p):
-    game_stamps = [stamp for stamp in p.server.stamps.values() if stamp.group_id == p.room.stamp_group]
-    collected_stamps = [stamp for stamp in game_stamps if stamp.id in p.stamps]
-    total_collected_stamps = len(collected_stamps)
-    total_game_stamps = len(game_stamps)
-    collected_stamps_string = '|'.join(str(stamp.id) for stamp in collected_stamps)
-    await p.send_xt('cjsi', collected_stamps_string, total_collected_stamps, total_game_stamps)
 
 
 async def ninja_win(winner, loser):
     await ninja_progress(winner.penguin, won=True)
     await ninja_progress(loser.penguin, won=False)
-    await ninja_stamps_earned(winner.penguin)
-    await ninja_stamps_earned(loser.penguin)
     await winner.penguin.waddle.remove_penguin(winner.penguin)
     await loser.penguin.waddle.remove_penguin(loser.penguin)
 
@@ -294,6 +313,8 @@ async def handle_update_game(p):
 @handlers.handler(XTPacket('lz', ext='z'))
 @handlers.waddle(CardJitsuLogic, CardJitsuMatLogic, SenseiLogic)
 async def handle_leave_game(p):
+    # sending stamp info fixes the game taking a bit to close when quitting
+    await p.send_card_jitsu_stamp_info()
     seat_id = p.waddle.get_seat_id(p)
     await p.waddle.send_xt('cz', p.safe_name, f=lambda penguin: penguin is not p)
     await p.waddle.send_xt('lz', seat_id, f=lambda penguin: penguin is not p)
@@ -347,9 +368,8 @@ async def handle_send_pick(p, action: str, card_id: int):
         winner_seat_id = p.waddle.get_round_winner()
 
         if me.chosen.card.id == 256 or opponent.chosen.card.id == 256:
-            stamp = p.server.stamps[246]
-            await me.penguin.add_stamp(stamp, notify=True)
-            await opponent.penguin.add_stamp(stamp, notify=True)
+            await me.penguin.add_card_jitsu_stamp(CardStamp.SENSEI_CARD)
+            await opponent.penguin.add_card_jitsu_stamp(CardStamp.SENSEI_CARD)
 
         if me.chosen.card.power_id and me.chosen.card.power_id in CardJitsuLogic.OnPlayed:
             await p.waddle.send_xt('zm', 'power', seat_id, opponent_seat_id, me.chosen.card.power_id)
@@ -373,19 +393,18 @@ async def handle_send_pick(p, action: str, card_id: int):
             if winning_cards:
                 await p.waddle.send_xt('czo', 0, winner_seat_id, *(card.id for card in winning_cards))
 
-                stamp = p.server.stamps[[244, 242][win_method]]
-                await winner.penguin.add_stamp(stamp, notify=True)
+                stamp = [CardStamp.ONE_ELEMENT, CardStamp.ELEMENTAL_WIN][win_method]
+                await winner.penguin.add_card_jitsu_stamp(stamp)
                 if all(not cards for cards in loser.bank.values()):
-                    stamp = p.server.stamps[238]
-                    await winner.penguin.add_stamp(stamp, notify=True)
+                    await winner.penguin.add_card_jitsu_stamp(
+                        CardStamp.FLAWLESS_VICTORY
+                    )
                 if sum(1 for cards in winner.bank.values() for _ in cards) >= 9:
-                    stamp = p.server.stamps[248]
-                    await winner.penguin.add_stamp(stamp, notify=True)
+                    await winner.penguin.add_card_jitsu_stamp(CardStamp.FULL_DOJO)
 
                 await winner.penguin.update(ninja_matches_won=winner.penguin.ninja_matches_won+1).apply()
                 if winner.penguin.ninja_matches_won == 25:
-                    stamp = p.server.stamps[240]
-                    await winner.penguin.add_stamp(stamp, notify=True)
+                    await winner.penguin.add_card_jitsu_stamp(CardStamp.MATCH_MASTER)
 
                 await ninja_win(winner, loser)
             else:
@@ -483,8 +502,7 @@ async def handle_send_sensei_pick(p, action: str, card_id: int):
     winner_seat_id = p.waddle.get_round_winner()
 
     if me.chosen.card.id == 256 or sensei.chosen.card.id == 256:
-        stamp = p.server.stamps[246]
-        await p.add_stamp(stamp, notify=True)
+        await me.penguin.add_card_jitsu_stamp(CardStamp.SENSEI_CARD)
 
     if me.chosen.card.power_id and me.chosen.card.power_id in CardJitsuLogic.OnPlayed:
         await p.send_xt('zm', 'power', 1, 0, me.chosen.card.power_id)
@@ -508,24 +526,22 @@ async def handle_send_sensei_pick(p, action: str, card_id: int):
             await p.waddle.send_xt('czo', 0, winner_seat_id, *(card.id for card in winning_cards))
 
             if winner == me:
-                stamp = p.server.stamps[[244, 242][win_method]]
-                await p.add_stamp(stamp, notify=True)
+                stamp = [CardStamp.ONE_ELEMENT, CardStamp.ELEMENTAL_WIN][win_method]
+                await me.penguin.add_card_jitsu_stamp(stamp)
                 if all(not cards for cards in sensei.bank.values()):
-                    stamp = p.server.stamps[238]
-                    await p.add_stamp(stamp, notify=True)
+                    await me.penguin.add_card_jitsu_stamp(CardStamp.FLAWLESS_VICTORY)
                 if sum(1 for cards in me.bank.values() for _ in cards) >= 9:
-                    stamp = p.server.stamps[248]
-                    await p.add_stamp(stamp, notify=True)
+                    await me.penguin.add_card_jitsu_stamp(CardStamp.FULL_DOJO)
 
                 await p.update(ninja_matches_won=p.ninja_matches_won + 1).apply()
                 if p.ninja_matches_won == 25:
-                    stamp = p.server.stamps[240]
-                    await p.add_stamp(stamp, notify=True)
+                    await me.penguin.add_card_jitsu_stamp(CardStamp.MATCH_MASTER)
 
-                await ninja_stamps_earned(p)
                 can_rank_up = await ninja_rank_up(p)
                 if can_rank_up:
                     await p.send_xt('cza', p.ninja_rank)
+            else:
+                await ninja_progress(p, False)
         else:
             for seat_id, ninja in enumerate(p.waddle.ninjas):
                 if not p.waddle.has_cards_to_play(seat_id):
@@ -536,7 +552,6 @@ async def handle_send_sensei_pick(p, action: str, card_id: int):
                         if can_rank_up:
                             await p.send_xt('cza', p.ninja_rank)
                     await p.waddle.send_xt('czo', 0, winner_seat_id)
-                    await ninja_stamps_earned(p)
 
     await p.send_xt('zm', 'judge', winner_seat_id)
     me.chosen = None
