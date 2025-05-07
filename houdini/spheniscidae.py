@@ -22,7 +22,8 @@ class Spheniscidae:
         self.server = server
         self.logger = server.logger
 
-        self.peer_name = writer.get_extra_info('peername')
+        peername = writer.get_extra_info('peername')
+        self.peer_name = peername[0] if isinstance(peername, tuple) else peername
         self.server.peers_by_ip[self.peer_name] = self
 
         self.joined_world = False
